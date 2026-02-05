@@ -102,3 +102,4 @@ References
 
 Gu, Shihao; Kelly, Bryan; Xiu, Dacheng. "Empirical Asset Pricing via Machine Learning". The Review of Financial Studies, 33(5), 2020, 2223–2273.
 Jensen, Theis Ingerslev; Kelly, Bryan; Pedersen, Lasse Heje. "Is There a Replication Crisis in Finance?". The Journal of Finance, 78(5), 2023, 2465-2518.
+
