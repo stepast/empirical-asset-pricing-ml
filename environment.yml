@@ -1,0 +1,20 @@
+name: gkx-ml
+channels:
+  - conda-forge
+  - pytorch
+dependencies:
+  - python=3.10
+  - numpy
+  - pandas
+  - scipy
+  - scikit-learn
+  - pyarrow
+  - openpyxl
+  - requests
+  - wrds
+  - statsmodels
+  - matplotlib
+  - pytorch
+  - pip
+  - pip:
+      - tqdm
