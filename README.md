@@ -4,10 +4,9 @@ This repository contains a reproducible research pipeline for forecasting U.S. e
 
 Data note: Raw data are not included. The equity panel is accessed via WRDS. You must have valid WRDS credentials and permissions.
 
----
+## Project structure
 
-Project structure
-
+```text
 .
 ├── data/
 │   ├── raw/                   # raw downloads (ignored by git; .gitkeep included)
@@ -22,12 +21,11 @@ Project structure
     ├── preprocessing.py       # feature preparation + split-safe transforms
     ├── splitting.py           # GKX-style rolling train/val/test splits
     ├── training.py            # model training and (optional) hyperparameter tuning
-    ├── models.py              # model definitions (e.g., MLP)
+    ├── models.py              # model definitions 
     ├── results.py             # result saving utilities + run metadata
     ├── schemas.py             # FeatureConfig / TrainConfig dataclasses
     └── utils.py               # metrics and helper functions
-
----
+```
 
 Setup
 
