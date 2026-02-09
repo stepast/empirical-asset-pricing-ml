@@ -29,6 +29,7 @@ data/processed/*
 # Keep folder structure
 !data/raw/.gitkeep
 !data/processed/.gitkeep
+!data/processed/results/
 !data/processed/results/.gitkeep
 
 # Optional: logs / outputs
