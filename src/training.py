@@ -435,6 +435,11 @@ def run_gkx_mlp(
     ensemble_n: int = 5,
     l1_lambda: float = 0.0,
     deterministic: bool = True,
+    use_plateau_scheduler: bool = True,
+    plateau_factor: float = 0.3,
+    plateau_patience: int = 0,
+    plateau_min_lr: float = 1e-6,
+    plateau_threshold: float | None = 1e-5,
     verbose: bool = True,
 ) -> dict[str, Any]:
     """Run MLP with ensemble averaging across multiple random seeds."""
@@ -493,6 +498,11 @@ def run_gkx_mlp(
                 patience=patience,
                 min_delta=min_delta,
                 l1_lambda=l1_lambda,
+                use_plateau_scheduler=use_plateau_scheduler,
+                plateau_factor=plateau_factor,
+                plateau_patience=plateau_patience,
+                plateau_min_lr=plateau_min_lr,
+                plateau_threshold=plateau_threshold,
                 verbose=False,
             )
 
