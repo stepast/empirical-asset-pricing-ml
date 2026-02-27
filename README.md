@@ -86,6 +86,8 @@ For each run, the following files are written to data/processed/results/:
 Methodology (high level)
 
 Walk-forward evaluation with expanding training window, fixed validation window, and rolling one-year out-of-sample tests (GKX-style).
+Feature standardization is performed split-safely during model training (per-month within each train/val/test split).
+Splits are based on label month (t+1) to avoid look-ahead from forward returns.
 
 Models included:
 - OLS

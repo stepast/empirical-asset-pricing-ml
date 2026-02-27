@@ -39,9 +39,10 @@ SIZE_FILTER_QUANTILE = 0.50
 TRAIN_YEARS = 25
 VAL_YEARS = 5
 TEST_START_YEAR = 2000
-TEST_END_YEAR = None
+TEST_END_YEAR = 2024
 
 TRAIN_CFG = TrainConfig(
+    date_col="label_eom",
     train_years=TRAIN_YEARS,
     val_years=VAL_YEARS,
     test_start_year=TEST_START_YEAR,
@@ -112,6 +113,7 @@ def main() -> None:
         )
 
     df = pd.read_parquet(processed_path)
+    df["label_eom"] = df["eom"] + pd.offsets.MonthEnd(1)
     print(f"\nLoaded: {len(df):,} rows, {len(df.columns)} columns")
 
     # -------------------------------------------------------------------
@@ -137,7 +139,7 @@ def main() -> None:
 
     id_vars = {
         "id", "permno", "permco", "gvkey", "iid",
-        "date", "eom",
+        "date", "eom", "label_eom",
         "curcd", "fx", "excntry",
         "me", "size_grp", "me_company",
         "common", "exch_main", "primary_sec", "obs_main",
@@ -178,7 +180,9 @@ def main() -> None:
     X, y, df_clean = prepare_features_and_target(
         df,
         feature_cols=feature_cols,
-        target_col = "ret_exc_lead1m"
+        target_col = "ret_exc_lead1m",
+        required_cols = ["ret_exc_lead1m"],
+        filter_on_target=False,
     )
     
     assert len(df_clean) == X.shape[0] == y.shape[0], "X/y/df_clean misalignment"
@@ -197,6 +201,8 @@ def main() -> None:
         interactions=MACRO_INTERACTIONS,
         ff49_col="ff49",
         date_col=TRAIN_CFG.date_col,
+        char_method="rank",
+        char_impute="median",
     )
 
     feature_builder = make_feature_builder(

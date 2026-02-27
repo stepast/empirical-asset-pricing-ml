@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 
 @dataclass(frozen=True)
@@ -12,6 +13,8 @@ class FeatureConfig:
     date_col: str = "eom"
     quantile_range: tuple[float, float] = (25.0, 75.0)
     interactions: bool = False
+    char_method: Literal["zscore", "rank"] = "rank"
+    char_impute: Literal["median", "none"] = "median"
 
 
 @dataclass
@@ -22,7 +25,7 @@ class TrainConfig:
     train_years: int = 25
     val_years: int = 5
     test_start_year: int = 2000
-    test_end_year: int | None = None
+    test_end_year: int = 2024
     seed: int = 0
     # ---- Early stopping / scheduler ----
     patience: int = 10

@@ -7,6 +7,85 @@ import pandas as pd
 
 from sklearn.preprocessing import RobustScaler
 
+def _ensure_numeric(df: pd.DataFrame, cols: Sequence[str]) -> pd.DataFrame:
+    """Coerce selected columns to numeric and replace inf with NaN."""
+    out = df.copy()
+    cols = list(dict.fromkeys(cols))
+    out[cols] = (
+        out[cols]
+        .apply(pd.to_numeric, errors="coerce")
+        .replace([np.inf, -np.inf], np.nan)
+    )
+    return out
+
+
+def _impute_cs_median(df: pd.DataFrame, cols: Sequence[str], date_col: str) -> pd.DataFrame:
+    """
+    Cross-sectionally impute NaNs with the per-month median.
+    Any remaining NaNs (all-missing month/col) become 0.
+    """
+    out = df.copy()
+    cols = list(cols)
+
+    med_by_date = out.groupby(date_col, sort=False)[cols].median()
+    med_aligned = out[[date_col]].join(med_by_date, on=date_col)[cols]
+
+    out[cols] = out[cols].where(~out[cols].isna(), med_aligned).fillna(0.0)
+    return out
+
+
+def standardize_cross_sectional(
+    df: pd.DataFrame,
+    char_cols: Sequence[str],
+    date_col: str = "eom",
+    method: str = "rank",
+    impute: str = "median",
+) -> pd.DataFrame:
+    """
+    Cross-sectionally transform characteristics by date.
+
+    method:
+      - "zscore": per-month (x - mean) / std
+      - "rank":   per-month rank transform mapped to [-1, 1]
+    impute:
+      - "median": per-month median imputation (then 0 for all-missing)
+      - "none":   no imputation (NaNs remain)
+    """
+    if date_col not in df.columns:
+        raise KeyError(f"Date column '{date_col}' not found in DataFrame.")
+
+    char_cols = list(char_cols)
+    out = _ensure_numeric(df, char_cols)
+
+    g = out.groupby(date_col)[char_cols]
+
+    if method == "zscore":
+        means = g.transform("mean")
+        stds = g.transform("std").replace(0.0, 1.0).fillna(1.0)
+        out[char_cols] = ((out[char_cols] - means) / stds).astype("float64")
+
+    elif method == "rank":
+        r = g.rank(method="average", na_option="keep")
+        n = g.transform("count")
+
+        mapped = 2.0 * ((r - 1.0) / (n - 1.0) - 0.5)
+        mapped = mapped.where(n > 1, 0.0)
+
+        out[char_cols] = mapped.astype(np.float32)
+
+    else:
+        raise ValueError(f"Unknown method: {method!r}. Use 'zscore' or 'rank'.")
+
+    if impute == "median":
+        out = _impute_cs_median(out, char_cols, date_col=date_col)
+        out[char_cols] = out[char_cols].astype(np.float32)
+    elif impute == "none":
+        pass
+    else:
+        raise ValueError(f"Unknown impute: {impute!r}. Use 'median' or 'none'.")
+
+    return out
+
 def ff49_dummies_for_split(
     df: pd.DataFrame,
     train_idx: np.ndarray,
@@ -125,6 +204,7 @@ def prepare_features_and_target(
     feature_cols: Sequence[str],
     target_col: str = "ret_exc_lead1m",
     required_cols: Sequence[str] = (),
+    filter_on_target: bool = False,
 ) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
     """
     Construct base feature matrix X and target y, then remove rows that are not usable.
@@ -144,7 +224,7 @@ def prepare_features_and_target(
     else:
         ok_req = np.ones(len(df), dtype=bool)
     
-    mask = y.notna() & ok_req
+    mask = y.notna() & ok_req if filter_on_target else ok_req
 
     X = X.loc[mask]
     y = y.loc[mask]
@@ -152,14 +232,13 @@ def prepare_features_and_target(
 
     # Ensure numeric features; convert non-numeric to NaN, and inf -> NaN
     X = X.apply(pd.to_numeric, errors="coerce").replace([np.inf, -np.inf], np.nan)
+    y = pd.to_numeric(y, errors="coerce").replace([np.inf, -np.inf], np.nan)
 
-    # Keep only rows where ALL features and target are finite
-    finite_mask = np.isfinite(X.to_numpy(dtype=float)).all(axis=1) & np.isfinite(y.to_numpy(dtype=float))
-
-    # Reset index together to keep alignment stable for downstream indexing
-    X_clean = X.loc[finite_mask].reset_index(drop=True)
-    y_clean = y.loc[finite_mask].reset_index(drop=True)
-    df_clean = df_sub.loc[finite_mask].reset_index(drop=True)
+    # Do not drop rows based on feature NaNs; downstream split-safe
+    # standardization will impute per-month where configured.
+    X_clean = X.reset_index(drop=True)
+    y_clean = y.reset_index(drop=True)
+    df_clean = df_sub.reset_index(drop=True)
 
     return X_clean, y_clean, df_clean
 
@@ -179,8 +258,9 @@ def make_feature_builder(
     - If cfg.interactions=False: macros are not used at all.
     - If cfg.interactions=True: macros are used only to form (chars × macros) interactions.
     """
-    macro_cols = list(cfg.macro_cols)
-    char_cols = list(cfg.char_cols)
+    macro_cols = list(dict.fromkeys(cfg.macro_cols))
+    # Keep split/group date out of feature set.
+    char_cols = [c for c in dict.fromkeys(cfg.char_cols) if c != cfg.date_col]
 
     # sanity: required columns exist in X_base
     needed = list(char_cols)
@@ -191,16 +271,27 @@ def make_feature_builder(
     if missing:
         raise ValueError(f"Missing expected feature columns in X_base: {missing[:10]}")
 
+    def _standardize_chars(idx: np.ndarray) -> np.ndarray:
+        df_sub = df_aligned.iloc[idx][[cfg.date_col] + char_cols].copy()
+        df_std = standardize_cross_sectional(
+            df_sub,
+            char_cols,
+            date_col=cfg.date_col,
+            method=cfg.char_method,
+            impute=cfg.char_impute,
+        )
+        return df_std[char_cols].to_numpy(dtype=np.float32, copy=False)
+
     def _builder(train_idx: np.ndarray, val_idx: np.ndarray, test_idx: np.ndarray) -> dict[str, Any]:
         # 1) FF industry dummies (TRAIN defines category set)
         d_tr, d_va, d_te = ff49_dummies_for_split(
             df_aligned, train_idx, val_idx, test_idx, col=cfg.ff49_col
         )
 
-        # 2) Base characteristics block (NO macros)
-        Xc_tr = X_base.iloc[train_idx][char_cols].to_numpy(dtype=np.float32, copy=False)
-        Xc_va = X_base.iloc[val_idx][char_cols].to_numpy(dtype=np.float32, copy=False)
-        Xc_te = X_base.iloc[test_idx][char_cols].to_numpy(dtype=np.float32, copy=False)
+        # 2) Base characteristics block (NO macros), split-safe standardization
+        Xc_tr = _standardize_chars(train_idx)
+        Xc_va = _standardize_chars(val_idx)
+        Xc_te = _standardize_chars(test_idx)
 
         # 3) Optional interactions (chars × scaled macros), macros not included standalone
         if cfg.interactions and macro_cols:
